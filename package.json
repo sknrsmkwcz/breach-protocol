@@ -1,0 +1,14 @@
+{
+  "name": "breach-protocol",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "npm test --workspace=@breach-protocol/game-engine",
+    "build": "npm run build --workspace=@breach-protocol/game-engine"
+  },
+  "devDependencies": {
+    "dotenv": "^17.2.3"
+  }
+}
