@@ -4,7 +4,7 @@ services:
     runtime: node
     region: oregon
     plan: free
-    buildCommand: npm install && npm run build --workspace=@breach-protocol/api
+    buildCommand: npm install && npm run build --workspace=@breach-protocol/game-engine && npm run build --workspace=@breach-protocol/api
     startCommand: npm run start --workspace=@breach-protocol/api
     healthCheckPath: /health
     envVars:
@@ -17,10 +17,10 @@ services:
       - key: DATABASE_AUTH_TOKEN
         sync: false
       - key: JWT_SECRET
-        generateValue: true
+        sync: false
       - key: JWT_EXPIRES_IN
         value: 15m
       - key: JWT_REFRESH_EXPIRES_IN
         value: 7d
       - key: ADMIN_SETUP_KEY
-        generateValue: true
+        sync: false
