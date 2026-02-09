@@ -56,11 +56,11 @@ CREATE TABLE IF NOT EXISTS games (
   completed_at TEXT
 );
 
--- Game actions history
+-- Game actions history (player_id can be 'ai' for AI actions)
 CREATE TABLE IF NOT EXISTS game_actions (
   id TEXT PRIMARY KEY,
   game_id TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-  player_id TEXT NOT NULL REFERENCES users(id),
+  player_id TEXT NOT NULL,
   action_type TEXT NOT NULL,
   action_data TEXT NOT NULL,
   result_events TEXT NOT NULL,

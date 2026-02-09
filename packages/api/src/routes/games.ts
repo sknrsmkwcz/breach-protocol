@@ -25,6 +25,8 @@ router.post('/', async (req, res) => {
   try {
     const { playerFaction, opponentFaction, vsAI } = createGameSchema.parse(req.body);
     
+    console.log('[POST /games] Creating game for user:', req.user!.userId);
+    
     const game = await gameService.createGame({
       playerId: req.user!.userId,
       playerFaction,
@@ -32,13 +34,17 @@ router.post('/', async (req, res) => {
       vsAI,
     });
     
+    console.log('[POST /games] Game created:', game.id);
+    
     res.status(201).json({ game });
   } catch (error) {
+    console.error('[POST /games] Error:', error);
     if (error instanceof z.ZodError) {
       res.status(400).json({ error: 'Invalid input', details: error.errors });
       return;
     }
-    res.status(500).json({ error: 'Failed to create game' });
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: 'Failed to create game', details: message });
   }
 });
 
@@ -49,6 +55,7 @@ router.get('/', async (req, res) => {
     const games = await gameService.getUserGames(req.user!.userId, status);
     res.json({ games });
   } catch (error) {
+    console.error('[GET /games] Error:', error);
     res.status(500).json({ error: 'Failed to fetch games' });
   }
 });
@@ -56,13 +63,21 @@ router.get('/', async (req, res) => {
 // GET /games/:id - Get specific game
 router.get('/:id', async (req, res) => {
   try {
-    const game = await gameService.getGame(req.params.id, req.user!.userId);
+    const game = await gameService.getGame(req.params.id);
     if (!game) {
       res.status(404).json({ error: 'Game not found' });
       return;
     }
+    
+    // Verify user is a participant
+    if (game.player1_id !== req.user!.userId && game.player2_id !== req.user!.userId && game.player2_id !== 'ai') {
+      res.status(404).json({ error: 'Game not found' });
+      return;
+    }
+    
     res.json({ game });
   } catch (error) {
+    console.error('[GET /games/:id] Error:', error);
     res.status(500).json({ error: 'Failed to fetch game' });
   }
 });
@@ -81,6 +96,7 @@ router.post('/:id/actions', async (req, res) => {
     const result = await gameService.submitAction(req.params.id, req.user!.userId, action as any);
     res.json(result);
   } catch (error) {
+    console.error('[POST /games/:id/actions] Error:', error);
     if (error instanceof z.ZodError) {
       res.status(400).json({ error: 'Invalid action', details: error.errors });
       return;
@@ -96,8 +112,14 @@ router.post('/:id/actions', async (req, res) => {
 // GET /games/:id/history - Get action history
 router.get('/:id/history', async (req, res) => {
   try {
-    const game = await gameService.getGame(req.params.id, req.user!.userId);
+    const game = await gameService.getGame(req.params.id);
     if (!game) {
+      res.status(404).json({ error: 'Game not found' });
+      return;
+    }
+    
+    // Verify user is a participant
+    if (game.player1_id !== req.user!.userId && game.player2_id !== req.user!.userId && game.player2_id !== 'ai') {
       res.status(404).json({ error: 'Game not found' });
       return;
     }
@@ -105,6 +127,7 @@ router.get('/:id/history', async (req, res) => {
     const actions = await gameService.getGameActions(req.params.id);
     res.json({ actions });
   } catch (error) {
+    console.error('[GET /games/:id/history] Error:', error);
     res.status(500).json({ error: 'Failed to fetch game history' });
   }
 });
@@ -115,6 +138,7 @@ router.delete('/:id', async (req, res) => {
     await gameService.abandonGame(req.params.id, req.user!.userId);
     res.status(204).send();
   } catch (error) {
+    console.error('[DELETE /games/:id] Error:', error);
     res.status(500).json({ error: 'Failed to abandon game' });
   }
 });
