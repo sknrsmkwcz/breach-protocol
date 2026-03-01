@@ -29,7 +29,7 @@ export default function DashboardPage() {
     );
   }
 
-  const testingCards = data?.totalCards ? data.totalCards - data.activeCards : 0;
+  const testingCards = data?.cards?.total ? data.cards.total - data.cards.active : 0;
 
   return (
     <div className="space-y-6">
@@ -54,7 +54,7 @@ export default function DashboardPage() {
           <div className="flex justify-between items-start">
             <div>
               <p className="text-sm text-gray-400">Total Cards</p>
-              <p className="text-3xl font-bold text-white mt-1">{data?.totalCards ?? 0}</p>
+              <p className="text-3xl font-bold text-white mt-1">{data?.cards?.total ?? 0}</p>
             </div>
             <div className="p-3 rounded-lg bg-cyber-purple/20">
               <CreditCardIcon className="w-6 h-6 text-cyber-purple" />
@@ -66,7 +66,7 @@ export default function DashboardPage() {
           <div className="flex justify-between items-start">
             <div>
               <p className="text-sm text-gray-400">Active Cards</p>
-              <p className="text-3xl font-bold text-white mt-1">{data?.activeCards ?? 0}</p>
+              <p className="text-3xl font-bold text-white mt-1">{data?.cards?.active ?? 0}</p>
             </div>
             <div className="p-3 rounded-lg bg-cyber-green/20">
               <CheckCircleIcon className="w-6 h-6 text-cyber-green" />
@@ -92,7 +92,7 @@ export default function DashboardPage() {
           <div className="flex justify-between items-start">
             <div>
               <p className="text-sm text-gray-400">Simulations</p>
-              <p className="text-3xl font-bold text-white mt-1">{data?.totalSimulations ?? 0}</p>
+              <p className="text-3xl font-bold text-white mt-1">{data?.simulations?.total ?? 0}</p>
             </div>
             <div className="p-3 rounded-lg bg-cyber-cyan/20">
               <BeakerIcon className="w-6 h-6 text-cyber-cyan" />
@@ -119,7 +119,7 @@ export default function DashboardPage() {
             />
           ) : (
             <div className="space-y-2">
-              {data.recentSimulations.map(sim => {
+              {data.recentSimulations.map((sim: { id: string; status: string; config: { faction1: string; faction2: string }; gamesCompleted: number; gamesTotal: number; createdAt?: string; games_completed?: number; games_total?: number; created_at?: string; results?: { faction1Wins: number; gamesPlayed: number } }) => {
                 const winRate = sim.results 
                   ? Math.round((sim.results.faction1Wins / sim.results.gamesPlayed) * 100)
                   : null;
@@ -135,7 +135,7 @@ export default function DashboardPage() {
                         {sim.config.faction1} vs {sim.config.faction2}
                       </span>
                       <p className="text-xs text-gray-500 mt-1">
-                        {sim.games_completed}/{sim.games_total} games • {formatDistanceToNow(new Date(sim.created_at), { addSuffix: true })}
+                        {sim.gamesCompleted}/{sim.gamesTotal} games • {formatDistanceToNow(new Date(sim.createdAt || new Date().toISOString()), { addSuffix: true })}
                       </p>
                     </div>
                     <div className="text-right">
