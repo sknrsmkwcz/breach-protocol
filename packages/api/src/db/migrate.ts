@@ -186,7 +186,11 @@ async function migration004(db: Awaited<ReturnType<typeof getDb>>): Promise<void
     )
   `);
 
-  await db.execute(`INSERT INTO cards_new SELECT * FROM cards`);
+  await db.execute(`
+    INSERT INTO cards_new (id, type, card_type, faction, name, description, base_value, status, effects, generated_text, created_at, updated_at)
+    SELECT id, type, COALESCE(card_type, 'utility'), faction, name, description, base_value, status, COALESCE(effects, '[]'), generated_text, COALESCE(created_at, datetime('now')), COALESCE(updated_at, datetime('now'))
+    FROM cards
+  `);
   await db.execute(`DROP TABLE cards`);
   await db.execute(`ALTER TABLE cards_new RENAME TO cards`);
 
