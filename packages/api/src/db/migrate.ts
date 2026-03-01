@@ -166,6 +166,9 @@ async function migration004(db: Awaited<ReturnType<typeof getDb>>): Promise<void
 
   console.log('[migrate] 004: removing legacy type CHECK constraint from cards table');
 
+  // Drop any leftover cards_new from a previously interrupted run
+  await db.execute(`DROP TABLE IF EXISTS cards_new`);
+
   await db.execute(`
     CREATE TABLE cards_new (
       id TEXT PRIMARY KEY,
