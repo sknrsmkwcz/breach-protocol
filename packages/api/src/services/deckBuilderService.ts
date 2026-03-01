@@ -28,43 +28,37 @@ export interface GameCard {
   effects: Effect[];
 }
 
-// Convert database card to legacy game engine format (for backward compatibility)
-function dbCardToLegacyCard(dbCard: DbCard, cardId: number): LegacyCard | null {
-  if (!isLegacyCardType(dbCard.type)) {
-    return null; // Not a legacy card
-  }
-  
+// Convert database card to legacy game engine format
+function dbCardToLegacyCard(dbCard: DbCard, cardId: string): LegacyCard | null {
+  if (!isLegacyCardType(dbCard.type)) return null;
   const baseValue = dbCard.base_value ?? 3;
-
   switch (dbCard.type) {
-    case 'exploit':
-      return { type: 'exploit', id: cardId, baseDamage: baseValue };
-    case 'payload':
-      return { type: 'payload', id: cardId };
-    case 'zeroday':
-      return { type: 'zeroday', id: cardId };
-    case 'siphon':
-      return { type: 'siphon', id: cardId };
-    case 'firewall':
-      return { type: 'firewall', id: cardId, blockValue: baseValue };
-    case 'patch':
-      return { type: 'patch', id: cardId };
-    case 'purge':
-      return { type: 'purge', id: cardId };
-    default:
-      return null;
+    case 'exploit':  return { type: 'exploit', id: cardId, baseDamage: baseValue };
+    case 'payload':  return { type: 'payload', id: cardId };
+    case 'zeroday':  return { type: 'zeroday', id: cardId };
+    case 'siphon':   return { type: 'siphon', id: cardId };
+    case 'firewall': return { type: 'firewall', id: cardId, blockValue: baseValue };
+    case 'patch':    return { type: 'patch', id: cardId };
+    case 'purge':    return { type: 'purge', id: cardId };
+    default: return null;
   }
 }
 
-// Convert database card to new GameCard format
+// Map a custom card to the nearest legacy type based on its category
+function customCardToLegacyCard(dbCard: DbCard, cardId: string): LegacyCard {
+  const baseValue = dbCard.base_value ?? 3;
+  const category = dbCard.card_type || 'utility';
+  switch (category) {
+    case 'attack':  return { type: 'exploit', id: cardId, baseDamage: baseValue };
+    case 'defense': return { type: 'firewall', id: cardId, blockValue: baseValue };
+    case 'utility':
+    default:        return { type: 'payload', id: cardId };
+  }
+}
+
 function dbCardToGameCard(dbCard: DbCard, index: number): GameCard {
   let effects: Effect[] = [];
-  try {
-    effects = JSON.parse(dbCard.effects || '[]');
-  } catch {
-    effects = [];
-  }
-
+  try { effects = JSON.parse(dbCard.effects || '[]'); } catch { effects = []; }
   return {
     id: `${dbCard.id}-${index}`,
     dbId: dbCard.id,
@@ -79,11 +73,10 @@ function dbCardToGameCard(dbCard: DbCard, index: number): GameCard {
 }
 
 export interface DeckBuildResult {
-  // Legacy deck for backward compatibility
   legacyDeck: LegacyCard[];
-  // New format with all cards including custom effect cards
   gameCards: GameCard[];
-  // Metadata
+  // Maps card ID (used in legacyDeck) to the card's display name from the DB
+  cardIdToName: Record<string, string>;
   cardsByType: Record<string, number>;
   cardsByCategory: Record<string, number>;
   uniqueCardCount: number;
@@ -113,27 +106,22 @@ export async function buildDeckFromDatabase(
   });
 
   const dbCards = result.rows as unknown as DbCard[];
-
   console.log(`[DeckBuilder] Found ${dbCards.length} unique cards for ${faction}`);
 
   if (dbCards.length === 0) {
     errors.push(`No cards found for ${faction} with status: ${includeStatus.join(', ')}`);
     return {
-      legacyDeck: [],
-      gameCards: [],
-      cardsByType: {},
-      cardsByCategory: {},
-      uniqueCardCount: 0,
-      totalCardCount: 0,
-      customCardCount: 0,
-      legacyCardCount: 0,
-      warnings,
-      errors,
+      legacyDeck: [], gameCards: [], cardIdToName: {},
+      cardsByType: {}, cardsByCategory: {},
+      uniqueCardCount: 0, totalCardCount: 0,
+      customCardCount: 0, legacyCardCount: 0,
+      warnings, errors,
     };
   }
 
   const legacyDeck: LegacyCard[] = [];
   const gameCards: GameCard[] = [];
+  const cardIdToName: Record<string, string> = {};
   const cardsByType: Record<string, number> = {};
   const cardsByCategory: Record<string, number> = {};
   let cardIdCounter = 1;
@@ -142,25 +130,26 @@ export async function buildDeckFromDatabase(
 
   for (const dbCard of dbCards) {
     const isLegacy = isLegacyCardType(dbCard.type);
-    
+
     cardsByType[dbCard.type] = (cardsByType[dbCard.type] || 0) + copiesPerCard;
     cardsByCategory[dbCard.card_type || 'utility'] = (cardsByCategory[dbCard.card_type || 'utility'] || 0) + copiesPerCard;
 
     for (let i = 0; i < copiesPerCard; i++) {
-      // Create GameCard (new format)
-      const gameCard = dbCardToGameCard(dbCard, i);
-      gameCards.push(gameCard);
+      const cardId = String(cardIdCounter);
+      gameCards.push(dbCardToGameCard(dbCard, i));
+      cardIdToName[cardId] = dbCard.name;
 
-      // Create legacy card if applicable
       if (isLegacy) {
-        const legacyCard = dbCardToLegacyCard(dbCard, cardIdCounter);
+        const legacyCard = dbCardToLegacyCard(dbCard, cardId);
         if (legacyCard) {
           legacyDeck.push(legacyCard);
           legacyCardCount++;
         }
       } else {
+        // Map custom card to nearest legacy type so it participates in simulations
+        const mapped = customCardToLegacyCard(dbCard, cardId);
+        legacyDeck.push(mapped);
         customCardCount++;
-        warnings.push(`"${dbCard.name}" is a custom card and is not yet supported by the simulation engine — it will be excluded from games`);
       }
 
       cardIdCounter++;
@@ -168,56 +157,45 @@ export async function buildDeckFromDatabase(
   }
 
   if (gameCards.length < 10) {
+    warnings.push(`${faction} deck has only ${gameCards.length} cards. Recommend at least 10 for balanced gameplay.`);
+  }
+
+  if (customCardCount > 0) {
     warnings.push(
-      `${faction} deck has only ${gameCards.length} cards. Recommend at least 10 for balanced gameplay.`
+      `${customCardCount} custom card(s) in ${faction} deck are mapped to approximate legacy behaviour for simulation (attack→exploit, defense→firewall, utility→payload). Effect details are not simulated.`
     );
   }
 
   console.log(`[DeckBuilder] Built ${faction} deck:`);
   console.log(`  Total: ${gameCards.length} cards (${dbCards.length} unique)`);
-  console.log(`  Legacy: ${legacyCardCount}, Custom: ${customCardCount}`);
+  console.log(`  Legacy: ${legacyCardCount}, Custom (mapped): ${customCardCount}`);
   console.log(`  By type: ${JSON.stringify(cardsByType)}`);
-  console.log(`  By category: ${JSON.stringify(cardsByCategory)}`);
 
   return {
-    legacyDeck,
-    gameCards,
-    cardsByType,
-    cardsByCategory,
+    legacyDeck, gameCards, cardIdToName,
+    cardsByType, cardsByCategory,
     uniqueCardCount: dbCards.length,
     totalCardCount: gameCards.length,
-    customCardCount,
-    legacyCardCount,
-    warnings,
-    errors,
+    customCardCount, legacyCardCount,
+    warnings, errors,
   };
 }
 
 export async function getCardCountsByFaction(): Promise<Record<FactionId, {
-  active: number;
-  testing: number;
-  disabled: number;
-  total: number;
+  active: number; testing: number; disabled: number; total: number;
   byCategory: Record<string, number>;
 }>> {
   const db = getDb();
 
   const result = await db.execute(`
-    SELECT
-      faction,
-      card_type,
-      status,
-      COUNT(*) as count
+    SELECT faction, card_type, status, COUNT(*) as count
     FROM cards
     WHERE faction IN ('phantom', 'sentinel')
     GROUP BY faction, card_type, status
   `);
 
   const counts: Record<string, {
-    active: number;
-    testing: number;
-    disabled: number;
-    total: number;
+    active: number; testing: number; disabled: number; total: number;
     byCategory: Record<string, number>;
   }> = {
     phantom: { active: 0, testing: 0, disabled: 0, total: 0, byCategory: {} },
@@ -229,12 +207,9 @@ export async function getCardCountsByFaction(): Promise<Record<FactionId, {
     const status = row.status as string;
     const category = (row.card_type as string) || 'utility';
     const count = Number(row.count) || 0;
-
     if (!counts[faction]) continue;
-
     counts[faction].total += count;
     counts[faction].byCategory[category] = (counts[faction].byCategory[category] || 0) + count;
-
     if (status === 'active') counts[faction].active += count;
     else if (status === 'testing') counts[faction].testing += count;
     else if (status === 'disabled') counts[faction].disabled += count;
@@ -244,11 +219,7 @@ export async function getCardCountsByFaction(): Promise<Record<FactionId, {
 }
 
 export async function validateDeckIntegrity(faction: FactionId): Promise<{
-  valid: boolean;
-  activeCards: number;
-  customCards: number;
-  legacyCards: number;
-  issues: string[];
+  valid: boolean; activeCards: number; customCards: number; legacyCards: number; issues: string[];
 }> {
   const db = getDb();
   const issues: string[] = [];
@@ -267,32 +238,16 @@ export async function validateDeckIntegrity(faction: FactionId): Promise<{
       legacyCards++;
     } else {
       customCards++;
-      // Check if custom card has effects
       let effects: Effect[] = [];
-      try {
-        effects = JSON.parse((row.effects as string) || '[]');
-      } catch {
-        effects = [];
-      }
+      try { effects = JSON.parse((row.effects as string) || '[]'); } catch { effects = []; }
       if (effects.length === 0) {
         issues.push(`Custom card type "${type}" has no effects`);
       }
     }
   }
 
-  if (result.rows.length === 0) {
-    issues.push(`No active cards for ${faction}`);
-  }
+  if (result.rows.length === 0) issues.push(`No active cards for ${faction}`);
+  if (result.rows.length < 5) issues.push(`Only ${result.rows.length} active cards for ${faction} (recommend at least 5)`);
 
-  if (result.rows.length < 5) {
-    issues.push(`Only ${result.rows.length} active cards for ${faction} (recommend at least 5)`);
-  }
-
-  return {
-    valid: issues.length === 0,
-    activeCards: result.rows.length,
-    customCards,
-    legacyCards,
-    issues,
-  };
+  return { valid: issues.length === 0, activeCards: result.rows.length, customCards, legacyCards, issues };
 }

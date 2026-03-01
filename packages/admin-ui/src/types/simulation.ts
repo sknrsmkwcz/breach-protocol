@@ -41,10 +41,17 @@ export interface SimulationResults {
   cardStats: Record<string, CardStats>;
   detailedStats: {
     totalDamageDealt: { faction1: number; faction2: number };
-    totalDamageBlocked: { faction1: number; faction2: number };
+    totalDamageBlocked?: { faction1: number; faction2: number };
+    firewallDamageBlocked?: { faction1: number; faction2: number };
     totalHealing: { faction1: number; faction2: number };
     firewallsDeployed: { faction1: number; faction2: number };
+    firewallsDestroyed?: { faction1: number; faction2: number };
     boostsApplied: { faction1: number; faction2: number };
+    boostsConsumed?: { faction1: number; faction2: number };
+    cardsDrawn?: { faction1: number; faction2: number };
+    exploitDamage?: { faction1: number; faction2: number };
+    zerodayDamage?: { faction1: number; faction2: number };
+    siphonDamage?: { faction1: number; faction2: number };
   };
   deckInfo?: {
     faction1Cards: number;

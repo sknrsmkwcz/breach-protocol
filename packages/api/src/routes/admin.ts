@@ -241,6 +241,20 @@ router.post('/cards/validate-effects', async (req, res) => {
   }
 });
 
+router.delete('/cards/:id', async (req, res) => {
+  try {
+    const card = await adminCardService.deleteCard(req.params.id);
+    if (!card) {
+      res.status(404).json({ error: 'Card not found' });
+      return;
+    }
+    res.json({ message: 'Card deleted', card });
+  } catch (error) {
+    console.error('Error deleting card:', error);
+    res.status(500).json({ error: 'Failed to delete card' });
+  }
+});
+
 // ─── Simulation Routes ───
 
 router.post('/simulations', async (req, res) => {
@@ -255,6 +269,37 @@ router.post('/simulations', async (req, res) => {
     }
     console.error('Error starting simulation:', error);
     res.status(500).json({ error: 'Failed to start simulation' });
+  }
+});
+
+router.post('/simulations/batch-delete', async (req, res) => {
+  try {
+    const { ids } = z.object({ ids: z.array(z.string()).min(1) }).parse(req.body);
+    const db = getDb();
+
+    // Don't allow deleting running simulations
+    const placeholders = ids.map(() => '?').join(',');
+    const check = await db.execute({
+      sql: `SELECT id FROM simulations WHERE id IN (${placeholders}) AND status = 'running'`,
+      args: ids,
+    });
+    if (check.rows.length > 0) {
+      res.status(400).json({ error: 'Cannot delete running simulations' });
+      return;
+    }
+
+    await db.execute({
+      sql: `DELETE FROM simulations WHERE id IN (${placeholders})`,
+      args: ids,
+    });
+    res.json({ message: `Deleted ${ids.length} simulation(s)` });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Invalid input', details: error.errors });
+      return;
+    }
+    console.error('Error batch deleting simulations:', error);
+    res.status(500).json({ error: 'Failed to delete simulations' });
   }
 });
 

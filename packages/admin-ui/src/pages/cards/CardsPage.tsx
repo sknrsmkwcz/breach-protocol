@@ -1,11 +1,12 @@
 import { useState, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useCards, useUpdateCardStatus, useDuplicateCard } from '@/hooks/useCards';
-import { 
-  MagnifyingGlassIcon, 
-  PlusIcon, 
-  PencilIcon, 
+import { useCards, useUpdateCardStatus, useDuplicateCard, useDeleteCard } from '@/hooks/useCards';
+import {
+  MagnifyingGlassIcon,
+  PlusIcon,
+  PencilIcon,
   DocumentDuplicateIcon,
+  TrashIcon,
   ChevronDownIcon,
   ChevronRightIcon,
 } from '@heroicons/react/24/outline';
@@ -138,6 +139,7 @@ export default function CardsPage() {
   const { data: cards = [], isLoading, error } = useCards();
   const updateStatus = useUpdateCardStatus();
   const duplicateCard = useDuplicateCard();
+  const deleteCard = useDeleteCard();
   const { showToast } = useToast();
 
   const [search, setSearch] = useState(searchParams.get('search') || '');
@@ -163,6 +165,16 @@ export default function CardsPage() {
       showToast(`${name} duplicated`, 'success');
     } catch {
       showToast(`Failed to duplicate ${name}`, 'error');
+    }
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    try {
+      await deleteCard.mutateAsync(id);
+      showToast(`${name} deleted`, 'success');
+    } catch {
+      showToast(`Failed to delete ${name}`, 'error');
     }
   };
 
@@ -399,6 +411,14 @@ export default function CardsPage() {
                                             >
                                               <PencilIcon className="w-4 h-4 text-gray-400" />
                                             </Link>
+                                            <button
+                                              onClick={() => handleDelete(card.id, card.name)}
+                                              disabled={deleteCard.isPending}
+                                              className="p-1.5 hover:bg-red-900/40 rounded"
+                                              title="Delete"
+                                            >
+                                              <TrashIcon className="w-4 h-4 text-red-400/70 hover:text-red-400" />
+                                            </button>
                                             <Switch
                                               checked={card.status === 'active'}
                                               onChange={() => handleStatusToggle(card.id, card.status, card.name)}

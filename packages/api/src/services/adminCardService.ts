@@ -219,6 +219,14 @@ export const adminCardService = {
     });
   },
 
+  async deleteCard(id: string) {
+    const db = getDb();
+    const existing = await this.getCardById(id);
+    if (!existing) return null;
+    await db.execute({ sql: `DELETE FROM cards WHERE id = ?`, args: [id] });
+    return existing;
+  },
+
   async getCardTypes() {
     const db = getDb();
     const result = await db.execute(`

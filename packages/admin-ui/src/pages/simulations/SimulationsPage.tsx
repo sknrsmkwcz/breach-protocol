@@ -1,136 +1,283 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
-import { formatDistanceToNow } from 'date-fns';
-import { useSimulations, useCreateSimulation } from '@/hooks/useSimulations';
-import { PlayIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import {
+  useSimulations,
+  useCreateSimulation,
+  useDeleteSimulation,
+  useBatchDeleteSimulations,
+} from '@/hooks/useSimulations';
+import { PlayIcon, TrashIcon, EyeIcon } from '@heroicons/react/24/outline';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
-import EmptyState from '@/components/common/EmptyState';
 import { useToast } from '@/contexts/ToastContext';
-import type { FactionId } from '@/types/api';
 
-interface SimulationForm {
-  faction1: FactionId;
-  faction2: FactionId;
-  gamesCount: number;
+interface Simulation {
+  id: string;
+  status: string;
+  config: {
+    faction1: string;
+    faction2: string;
+    gamesCount: number;
+  };
+  games_total?: number;
+  gamesTotal?: number;
+  games_completed?: number;
+  gamesCompleted?: number;
+  created_at?: string;
+  createdAt?: string;
 }
 
 export default function SimulationsPage() {
-  const { data: sims, isLoading, refetch, isFetching } = useSimulations();
-  const create = useCreateSimulation();
+  const { data: simulations = [], isLoading } = useSimulations();
+  const createSimulation = useCreateSimulation();
+  const deleteSimulation = useDeleteSimulation();
+  const batchDelete = useBatchDeleteSimulations();
   const { showToast } = useToast();
-  
-  const { register, handleSubmit, reset, watch } = useForm<SimulationForm>({ 
-    defaultValues: { faction1: 'phantom', faction2: 'sentinel', gamesCount: 100 } 
-  });
 
-  const faction1 = watch('faction1');
-  const faction2 = watch('faction2');
+  const [gamesCount, setGamesCount] = useState(1000);
+  const [faction1, setFaction1] = useState<'phantom' | 'sentinel'>('phantom');
+  const [faction2, setFaction2] = useState<'phantom' | 'sentinel'>('sentinel');
+  const [includeTestingCards, setIncludeTestingCards] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const onSubmit = async (data: SimulationForm) => { 
+  const handleCreate = async () => {
     try {
-      await create.mutateAsync(data);
+      await createSimulation.mutateAsync({ gamesCount, faction1, faction2, includeTestingCards });
       showToast('Simulation started', 'success');
-      reset();
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to start', 'error');
+    } catch {
+      showToast('Failed to start simulation', 'error');
     }
   };
 
-  const runningSims = sims?.filter(s => s.status === 'running' || s.status === 'pending') || [];
-  const completedSims = sims?.filter(s => s.status === 'completed' || s.status === 'failed') || [];
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this simulation?')) return;
+    try {
+      await deleteSimulation.mutateAsync(id);
+      setSelected(prev => { const s = new Set(prev); s.delete(id); return s; });
+      showToast('Simulation deleted', 'success');
+    } catch {
+      showToast('Failed to delete simulation', 'error');
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    const ids = Array.from(selected);
+    if (!confirm(`Delete ${ids.length} simulation(s)?`)) return;
+    try {
+      await batchDelete.mutateAsync(ids);
+      setSelected(new Set());
+      showToast(`${ids.length} simulation(s) deleted`, 'success');
+    } catch {
+      showToast('Failed to delete simulations', 'error');
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelected(prev => {
+      const s = new Set(prev);
+      s.has(id) ? s.delete(id) : s.add(id);
+      return s;
+    });
+  };
+
+  const deletableSims = (simulations as Simulation[]).filter(s => s.status !== 'running');
+  const allDeletableSelected = deletableSims.length > 0 && deletableSims.every(s => selected.has(s.id));
+
+  const toggleSelectAll = () => {
+    if (allDeletableSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(deletableSims.map(s => s.id)));
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Simulations</h1>
-          <p className="text-gray-400 mt-1">Test game balance with AI battles</p>
-        </div>
-        <button onClick={() => refetch()} disabled={isFetching} className="btn-ghost">
-          <ArrowPathIcon className={`w-5 h-5 ${isFetching ? 'animate-spin' : ''}`} />
-        </button>
-      </div>
+      <h1 className="text-2xl font-bold text-white">Simulations</h1>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="card">
-        <h3 className="text-lg font-semibold text-white mb-4">Run New Simulation</h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {/* Create New Simulation */}
+      <div className="card">
+        <h2 className="text-lg font-semibold text-white mb-4">New Simulation</h2>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Games</label>
+            <input
+              type="number"
+              min={10}
+              max={100000}
+              value={gamesCount}
+              onChange={(e) => setGamesCount(parseInt(e.target.value) || 1000)}
+              className="input w-full"
+            />
+          </div>
           <div>
             <label className="block text-sm text-gray-400 mb-1">Faction 1</label>
-            <select {...register('faction1')} className="input">
+            <select
+              value={faction1}
+              onChange={(e) => setFaction1(e.target.value as 'phantom' | 'sentinel')}
+              className="input w-full"
+            >
               <option value="phantom">Phantom</option>
               <option value="sentinel">Sentinel</option>
             </select>
           </div>
           <div>
             <label className="block text-sm text-gray-400 mb-1">Faction 2</label>
-            <select {...register('faction2')} className="input">
+            <select
+              value={faction2}
+              onChange={(e) => setFaction2(e.target.value as 'phantom' | 'sentinel')}
+              className="input w-full"
+            >
               <option value="phantom">Phantom</option>
               <option value="sentinel">Sentinel</option>
             </select>
           </div>
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Games</label>
-            <input type="number" {...register('gamesCount', { valueAsNumber: true })} className="input" min="10" max="1000" />
+            <label className="block text-sm text-gray-400 mb-1">Include Testing</label>
+            <label className="flex items-center gap-2 mt-2">
+              <input
+                type="checkbox"
+                checked={includeTestingCards}
+                onChange={(e) => setIncludeTestingCards(e.target.checked)}
+                className="rounded"
+              />
+              <span className="text-sm text-gray-300">Testing cards</span>
+            </label>
           </div>
-          <div className="flex items-end">
-            <button type="submit" disabled={create.isPending} className="btn-primary w-full flex items-center justify-center gap-2">
-              {create.isPending ? <LoadingSpinner size="sm" /> : <PlayIcon className="w-5 h-5" />}
-              {create.isPending ? 'Starting...' : 'Run'}
+        </div>
+        <button
+          onClick={handleCreate}
+          disabled={createSimulation.isPending}
+          className="btn-primary mt-4 flex items-center gap-2"
+        >
+          <PlayIcon className="w-4 h-4" />
+          {createSimulation.isPending ? 'Starting...' : 'Start Simulation'}
+        </button>
+      </div>
+
+      {/* Simulation List */}
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">
+            Recent Simulations
+            {simulations.length > 0 && (
+              <span className="ml-2 text-sm font-normal text-gray-400">({simulations.length})</span>
+            )}
+          </h2>
+          {selected.size > 0 && (
+            <button
+              onClick={handleBatchDelete}
+              disabled={batchDelete.isPending}
+              className="flex items-center gap-2 px-3 py-1.5 rounded text-sm bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+            >
+              <TrashIcon className="w-4 h-4" />
+              Delete {selected.size} selected
             </button>
-          </div>
+          )}
         </div>
-        {faction1 === faction2 && (
-          <p className="text-sm text-cyber-yellow mt-2">⚠️ Mirror match selected</p>
-        )}
-      </form>
 
-      {runningSims.length > 0 && (
-        <div className="card border-cyber-cyan/30">
-          <h3 className="text-lg font-semibold text-cyber-cyan mb-4">Running ({runningSims.length})</h3>
-          <div className="space-y-3">
-            {runningSims.map(sim => (
-              <Link key={sim.id} to={`/simulations/${sim.id}`} className="block p-4 bg-gray-800/50 rounded-lg hover:bg-gray-800">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-white capitalize">{sim.config.faction1} vs {sim.config.faction2}</span>
-                  <span className="badge bg-cyber-cyan/20 text-cyber-cyan">{sim.status}</span>
-                </div>
-                <div className="h-2 bg-gray-700 rounded-full">
-                  <div className="h-full bg-cyber-cyan rounded-full" style={{ width: `${(sim.games_completed / sim.games_total) * 100}%` }} />
-                </div>
-                <p className="text-xs text-gray-500 mt-2">{sim.games_completed} / {sim.games_total}</p>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {isLoading ? (
-        <div className="flex justify-center py-8"><LoadingSpinner size="lg" /></div>
-      ) : completedSims.length === 0 && runningSims.length === 0 ? (
-        <EmptyState icon="🧪" title="No simulations yet" description="Run a simulation to test faction balance" />
-      ) : (
-        <div className="card">
-          <h3 className="text-lg font-semibold text-white mb-4">History ({completedSims.length})</h3>
+        {simulations.length === 0 ? (
+          <p className="text-gray-400">No simulations yet. Create one above!</p>
+        ) : (
           <div className="space-y-2">
-            {completedSims.map(sim => {
-              const winRate = sim.results ? Math.round((sim.results.faction1Wins / sim.results.gamesPlayed) * 100) : null;
-              const isBalanced = winRate !== null && Math.abs(winRate - 50) < 10;
+            {/* Select-all header */}
+            {deletableSims.length > 0 && (
+              <div className="flex items-center gap-3 px-3 py-1 text-xs text-gray-500">
+                <input
+                  type="checkbox"
+                  checked={allDeletableSelected}
+                  onChange={toggleSelectAll}
+                  className="rounded"
+                />
+                <span>Select all deletable ({deletableSims.length})</span>
+              </div>
+            )}
+
+            {(simulations as Simulation[]).map((sim) => {
+              const gamesCompleted = sim.gamesCompleted ?? sim.games_completed ?? 0;
+              const gamesTotal = sim.gamesTotal ?? sim.games_total ?? 0;
+              const isRunning = sim.status === 'running';
+              const isSelected = selected.has(sim.id);
+
               return (
-                <Link key={sim.id} to={`/simulations/${sim.id}`} className="flex items-center justify-between p-4 bg-gray-800/50 rounded-lg hover:bg-gray-800">
-                  <div>
-                    <span className="text-white capitalize">{sim.config.faction1} vs {sim.config.faction2}</span>
-                    <p className="text-sm text-gray-500">{sim.games_total} games • {formatDistanceToNow(new Date(sim.created_at), { addSuffix: true })}</p>
+                <div
+                  key={sim.id}
+                  className={`flex items-center gap-3 p-3 rounded-lg transition-colors ${
+                    isSelected ? 'bg-gray-700' : 'bg-gray-800'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    disabled={isRunning}
+                    onChange={() => toggleSelect(sim.id)}
+                    className="rounded flex-shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={sim.status} />
+                      <span className="text-white capitalize">
+                        {sim.config.faction1} vs {sim.config.faction2}
+                      </span>
+                      <span className="text-gray-500 text-sm">
+                        {sim.config.gamesCount?.toLocaleString()} games
+                      </span>
+                    </div>
+                    <div className="text-sm text-gray-400 mt-0.5">
+                      {gamesCompleted.toLocaleString()} / {gamesTotal.toLocaleString()} completed
+                      {isRunning && gamesTotal > 0 && (
+                        <span className="ml-2 text-blue-400">
+                          ({Math.round((gamesCompleted / gamesTotal) * 100)}%)
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  {sim.status === 'completed' && winRate !== null && (
-                    <span className={isBalanced ? 'text-cyber-green' : 'text-cyber-yellow'}>{winRate}% - {100 - winRate}%</span>
-                  )}
-                  {sim.status === 'failed' && <span className="badge bg-cyber-red/20 text-cyber-red">Failed</span>}
-                </Link>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <Link
+                      to={`/simulations/${sim.id}`}
+                      className="p-2 hover:bg-gray-700 rounded"
+                      title="View results"
+                    >
+                      <EyeIcon className="w-4 h-4 text-gray-400" />
+                    </Link>
+                    {!isRunning && (
+                      <button
+                        onClick={() => handleDelete(sim.id)}
+                        disabled={deleteSimulation.isPending}
+                        className="p-2 hover:bg-red-900/40 rounded"
+                        title="Delete"
+                      >
+                        <TrashIcon className="w-4 h-4 text-red-400/70 hover:text-red-400" />
+                      </button>
+                    )}
+                  </div>
+                </div>
               );
             })}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const colors: Record<string, string> = {
+    pending: 'bg-yellow-500/20 text-yellow-400',
+    running: 'bg-blue-500/20 text-blue-400',
+    completed: 'bg-green-500/20 text-green-400',
+    failed: 'bg-red-500/20 text-red-400',
+  };
+  return (
+    <span className={`px-2 py-0.5 rounded text-xs ${colors[status] || 'bg-gray-500/20 text-gray-400'}`}>
+      {status}
+    </span>
   );
 }
